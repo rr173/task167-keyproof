@@ -64,6 +64,10 @@ func (w *WrapService) Rewrap(ctx context.Context, objectID, oldKeyID, newKeyID s
 }
 
 // RewrapTx 在给定事务内执行重新封装。
+// 约束：目标密钥必须处于 active——retiring（退役待清理）、retired、
+// revoked、candidate 均不可作为重新封装目标，否则会向即将退出服务的
+// 密钥新增封装引用。全部状态校验先于任何封装边改写，故拒绝时原
+// 对象->旧密钥 封装边保持不变。
 func (w *WrapService) RewrapTx(ctx context.Context, q store.Querier, objectID, oldKeyID, newKeyID string) error {
 	if _, err := w.objects.Get(ctx, q, objectID); err != nil {
 		return err
@@ -75,7 +79,12 @@ func (w *WrapService) RewrapTx(ctx context.Context, q store.Querier, objectID, o
 	if err != nil {
 		return err
 	}
-	_ = nk
+	if nk.Status != model.KeyActive {
+		if nk.Status.RetiredOrRevoked() {
+			return model.ErrRetiredReference // 目标已退休/吊销，拒绝新封装
+		}
+		return model.ErrInvalidState // 目标 candidate/退役待清理不可建立新封装
+	}
 	ok, err := w.keys.Get(ctx, q, oldKeyID)
 	if err != nil {
 		return err

@@ -117,3 +117,55 @@ func TestWrapRejectsRetiredKey(t *testing.T) {
 		t.Fatalf("已退休密钥应拒绝新封装, got %v", err)
 	}
 }
+
+func TestRewrapRejectsRetiringTargetAndPreservesOldWrap(t *testing.T) {
+	st, reg, ctx := setup(t)
+	root := &model.Key{ID: "r1", Name: "root", Kind: model.KindRoot, Status: model.KeyCandidate}
+	_ = reg.CreateKey(ctx, root)
+	_, _ = reg.ActivateKey(ctx, "r1")
+	oldKey := &model.Key{ID: "k-old", Name: "old", Kind: model.KindData, Status: model.KeyCandidate, ParentID: "r1"}
+	_ = reg.CreateKey(ctx, oldKey)
+	_, _ = reg.ActivateKey(ctx, oldKey.ID)
+	// 目标密钥已进入退役待清理状态。
+	newKey := &model.Key{ID: "k-new", Name: "new", Kind: model.KindData, Status: model.KeyCandidate, ParentID: "r1"}
+	_ = reg.CreateKey(ctx, newKey)
+	_, _ = reg.ActivateKey(ctx, newKey.ID)
+	_, _ = reg.MarkRetiring(ctx, newKey.ID)
+
+	obj := &model.Object{ID: "o1", Name: "obj", Status: model.ObjectProtected}
+	_ = reg.CreateObject(ctx, obj)
+	ws := WrapServiceOf(reg)
+	if err := ws.AddWrap(ctx, obj.ID, oldKey.ID); err != nil {
+		t.Fatalf("setup wrap: %v", err)
+	}
+
+	// 重新封装到退役待清理目标必须被拒绝。
+	if err := ws.Rewrap(ctx, obj.ID, oldKey.ID, newKey.ID); err != model.ErrInvalidState {
+		t.Fatalf("退役待清理目标应拒绝重新封装, got %v", err)
+	}
+	// 原对象->旧密钥 封装边保持不变。
+	keys, err := ws.WrapsOfObject(ctx, obj.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 1 || keys[0].ID != oldKey.ID {
+		t.Fatalf("原封装边应保持不变, got %+v", keys)
+	}
+	o, _ := reg.objects.Get(ctx, st.DB(), obj.ID)
+	if o.Status != model.ObjectProtected {
+		t.Fatalf("对象状态不应改变, got %s", o.Status)
+	}
+
+	// 正式退休目标后重试：仍应拒绝，且封装边不变。
+	_, _ = reg.RetireKey(ctx, newKey.ID)
+	if err := ws.Rewrap(ctx, obj.ID, oldKey.ID, newKey.ID); err != model.ErrRetiredReference {
+		t.Fatalf("已退休目标应拒绝重新封装, got %v", err)
+	}
+	keys, err = ws.WrapsOfObject(ctx, obj.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 1 || keys[0].ID != oldKey.ID {
+		t.Fatalf("原封装边应保持不变, got %+v", keys)
+	}
+}
