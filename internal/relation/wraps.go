@@ -27,6 +27,10 @@ func (w *WrapService) AddWrap(ctx context.Context, objectID, keyID string) error
 }
 
 // AddWrapTx 事务版封装边绑定。
+// 约束：对象存在；密钥存在且状态为 active。
+// candidate 未启用不可被引用；retiring（退役待清理）/retired（已退休）/
+// revoking/revoked 不可接受任何新的对象封装边——新的写入应被拒绝，
+// 同时不应污染对象已建立的封装关系（本方法在校验通过前不触碰任何封装边）。
 func (w *WrapService) AddWrapTx(ctx context.Context, q store.Querier, objectID, keyID string) error {
 	if _, err := w.objects.Get(ctx, q, objectID); err != nil {
 		return err
@@ -35,7 +39,14 @@ func (w *WrapService) AddWrapTx(ctx context.Context, q store.Querier, objectID, 
 	if err != nil {
 		return err
 	}
-	_ = k
+	if k.Status != model.KeyActive {
+		// candidate 未启用、retiring 退役待清理、retired 已退休、
+		// revoking/revoked 吊销中等均不可新增封装引用。
+		if k.Status.RetiredOrRevoked() || k.Status == model.KeyRetiring || k.Status == model.KeyRevoking {
+			return model.ErrRetiredReference
+		}
+		return model.ErrInvalidState
+	}
 	wrap := &model.Wrap{ObjectID: objectID, KeyID: keyID}
 	return w.objects.AddWrap(ctx, q, wrap)
 }
