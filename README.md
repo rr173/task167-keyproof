@@ -41,12 +41,12 @@ go run ./cmd/keyproof --smoke-test
 go run ./cmd/keyproof --addr :8080 --db keyproof.db
 ```
 
-## API 入口（前缀 /api，共 35 个）
+## API 入口（前缀 /api，共 36 个）
 
 | 分组 | 方法与路径 |
 | --- | --- |
 | 密钥 | `POST /api/keys`、`GET /api/keys`、`GET /api/keys/{id}`、`POST /api/keys/{id}/activate`、`POST /api/keys/{id}/retiring`、`POST /api/keys/{id}/retire`、`POST /api/keys/{id}/revoke`、`PUT /api/keys/{id}/parent` |
-| 主体/授权 | `POST /api/subjects`、`GET /api/subjects`、`GET /api/subjects/{id}`、`POST /api/subjects/{id}/grants`、`DELETE /api/subjects/{id}/grants/{keyId}` |
+| 主体/授权 | `POST /api/subjects`、`GET /api/subjects`、`GET /api/subjects/{id}`、`POST /api/subjects/{id}/grants`、`DELETE /api/subjects/{id}/grants/{keyId}`、`DELETE /api/subjects/{id}` |
 | 对象/封装 | `POST /api/objects`、`GET /api/objects`、`GET /api/objects/{id}`、`POST /api/objects/{id}/wrap`、`POST /api/objects/{id}/rewrap`、`GET /api/objects/{id}/coverage` |
 | 计划 | `POST /api/plans`、`GET /api/plans`、`GET /api/plans/{id}`、`POST /api/plans/{id}/steps`、`POST /api/plans/{id}/validate`、`POST /api/plans/{id}/approve`、`POST /api/plans/{id}/execute`、`POST /api/plans/{id}/rollback`、`GET /api/plans/{id}/recovery` |
 | 证明 | `POST /api/proofs/compute`、`GET /api/proofs`、`GET /api/proofs/{id}`、`GET /api/plans/{id}/gaps`、`GET /api/plans/{id}/residuals` |

@@ -58,6 +58,8 @@ func (g *GrantService) RevokeGrantTx(ctx context.Context, q store.Querier, subje
 }
 
 // GrantsOfKey 返回直接授权到某密钥的全部主体。
+// 移除（removed）的主体不再具备解密能力，故不返回——覆盖查询、
+// 最短证据链与孤立判定据此对主体生命周期状态一致处理。
 func (g *GrantService) GrantsOfKey(ctx context.Context, keyID string) ([]*model.Subject, error) {
 	grants, err := g.subjects.ListGrants(ctx, g.st.DB(), "", keyID)
 	if err != nil {
@@ -69,13 +71,24 @@ func (g *GrantService) GrantsOfKey(ctx context.Context, keyID string) ([]*model.
 		if err != nil {
 			return nil, err
 		}
+		if s.Status != model.SubjectActive {
+			continue // 已移除主体：不再授权、不再可解密
+		}
 		out = append(out, s)
 	}
 	return out, nil
 }
 
 // GrantsOfSubject 返回主体直接授权的全部密钥。
+// 已移除的主体不再持有任何授权能力，返回空集。
 func (g *GrantService) GrantsOfSubject(ctx context.Context, subjectID string) ([]*model.Key, error) {
+	s, err := g.subjects.Get(ctx, g.st.DB(), subjectID)
+	if err != nil {
+		return nil, err
+	}
+	if s.Status != model.SubjectActive {
+		return nil, nil // 移除主体：不再持有授权
+	}
 	grants, err := g.subjects.ListGrants(ctx, g.st.DB(), subjectID, "")
 	if err != nil {
 		return nil, err
@@ -92,8 +105,15 @@ func (g *GrantService) GrantsOfSubject(ctx context.Context, subjectID string) ([
 }
 
 // AuthorizedForKey 判断主体是否可直接解密指定密钥（即授权到
-// 该密钥或该密钥的任一祖先）。
+// 该密钥或该密钥的任一祖先）。已移除的主体不可解密任何密钥。
 func (g *GrantService) AuthorizedForKey(ctx context.Context, subjectID, keyID string) (bool, error) {
+	s, err := g.subjects.Get(ctx, g.st.DB(), subjectID)
+	if err != nil {
+		return false, err
+	}
+	if s.Status != model.SubjectActive {
+		return false, nil // 移除主体：不具备解密能力
+	}
 	chain, err := g.h.AncestorIDs(ctx, g.st.DB(), keyID)
 	if err != nil {
 		return false, err

@@ -130,6 +130,28 @@ func (r *Registry) CreateSubject(ctx context.Context, s *model.Subject) error {
 	return r.subjects.Create(ctx, r.st.DB(), s)
 }
 
+// RemoveSubject 将主体置为已移除（removed）。
+// 移除是软删除：历史授权边保留以供审计与退休残留检测，但主体不再
+// 具备授权或解密能力——覆盖查询、最短证据链与孤立判定据此一致处理。
+// 只有 active 主体可被移除；重复移除幂等返回当前主体。
+func (r *Registry) RemoveSubject(ctx context.Context, id string) (*model.Subject, error) {
+	s, err := r.subjects.Get(ctx, r.st.DB(), id)
+	if err != nil {
+		return nil, err
+	}
+	if s.Status == model.SubjectRemoved {
+		return s, nil // 幂等
+	}
+	if s.Status != model.SubjectActive {
+		return nil, model.ErrInvalidState
+	}
+	if err := r.subjects.UpdateStatus(ctx, r.st.DB(), id, model.SubjectRemoved); err != nil {
+		return nil, err
+	}
+	s.Status = model.SubjectRemoved
+	return s, nil
+}
+
 // CreateObject 登记一个受保护加密对象。
 func (r *Registry) CreateObject(ctx context.Context, o *model.Object) error {
 	if !o.Status.Valid() {

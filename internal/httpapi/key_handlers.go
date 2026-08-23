@@ -186,3 +186,14 @@ func (s *Server) handleRevokeGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"revoked": "true"})
 }
+
+// handleRemoveSubject 软删除主体：移除后主体不再计入覆盖查询与
+// 最短证据链，亦不再被判为可解密对象。
+func (s *Server) handleRemoveSubject(w http.ResponseWriter, r *http.Request) {
+	sub, err := s.app.RemoveSubject(r.Context(), pathParam(r, "id"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sub)
+}

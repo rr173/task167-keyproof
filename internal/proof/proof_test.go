@@ -101,6 +101,88 @@ func TestResidualDetection(t *testing.T) {
 	}
 }
 
+// TestRemovedSubjectExcludedFromCoverage 验证主体被移除后：
+//   - 不再出现在对象覆盖证明（CoverageOfObject）中；
+//   - 不再被判为可解密对象（ShortestPath 给出缺口链而非覆盖链）；
+//   - 仅由该主体覆盖的对象被判定为孤立（IsOrphaned）。
+// 覆盖查询与最短证据链对主体生命周期状态保持一致处理。
+func TestRemovedSubjectExcludedFromCoverage(t *testing.T) {
+	st, eng, ctx := setupProof(t)
+	reg := relation.NewRegistry(st)
+	root := &model.Key{ID: "r1", Name: "root", Kind: model.KindRoot, Status: model.KeyCandidate}
+	_ = reg.CreateKey(ctx, root)
+	_, _ = reg.ActivateKey(ctx, "r1")
+	sub := &model.Subject{ID: "s1", Name: "eng", Status: model.SubjectActive}
+	_ = reg.CreateSubject(ctx, sub)
+	gs := relation.GrantServiceOf(reg)
+	if err := gs.AddGrant(ctx, "s1", "r1"); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+	obj := &model.Object{ID: "o1", Name: "obj", Status: model.ObjectProtected}
+	_ = reg.CreateObject(ctx, obj)
+	ws := relation.WrapServiceOf(reg)
+	if err := ws.AddWrap(ctx, "o1", "r1"); err != nil {
+		t.Fatalf("wrap: %v", err)
+	}
+
+	// 移除前：s1 覆盖 o1，可解密，对象非孤立。
+	paths, err := eng.CoverageOfObject(ctx, "o1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0].SubjectID != "s1" {
+		t.Fatalf("移除前应仅 s1 覆盖 o1: %+v", paths)
+	}
+	orphaned, err := eng.IsOrphaned(ctx, "o1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if orphaned {
+		t.Fatal("移除前 o1 不应孤立")
+	}
+
+	// 移除主体（软删除，授权边保留）。
+	if _, err := reg.RemoveSubject(ctx, "s1"); err != nil {
+		t.Fatalf("remove subject: %v", err)
+	}
+
+	// 移除后：o1 覆盖证明为空。
+	paths, err = eng.CoverageOfObject(ctx, "o1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range paths {
+		if p.SubjectID == "s1" {
+			t.Fatalf("移除主体 s1 不应继续出现在覆盖证明中: %+v", paths)
+		}
+	}
+	// 仅由 s1 覆盖的对象现应孤立。
+	orphaned, err = eng.IsOrphaned(ctx, "o1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !orphaned {
+		t.Fatal("移除覆盖主体后 o1 应被判为孤立")
+	}
+	// 最短证据链：s1 不再被判为可解密对象（缺口链而非覆盖链）。
+	chain, err := eng.ShortestPath(ctx, "s1", "o1")
+	if err != nil {
+		t.Fatalf("shortest path: %v", err)
+	}
+	if chain == nil || chain.Kind != "gap" {
+		t.Fatalf("移除主体应得到缺口链, 得到 %+v", chain)
+	}
+	// AuthorizedForKey：移除主体不可解密任何密钥。
+	gs2 := relation.GrantServiceOf(reg)
+	ok, err := gs2.AuthorizedForKey(ctx, "s1", "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("移除主体不应被判为可解密")
+	}
+}
+
 func TestFingerprintStable(t *testing.T) {
 	_, eng, ctx := setupProof(t)
 	fp1, err := eng.Fingerprint(ctx)

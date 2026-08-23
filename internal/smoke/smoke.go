@@ -324,6 +324,96 @@ func Run(dbPath string) error {
 	}
 	fmt.Printf("✓ 场景4 全局孤立与根链缺口: 对象 %s 孤立，根密钥 %s 无授权被识别\n", o3.Name, root2.Name)
 
+	// ---- 场景 5：移除主体后覆盖查询与最短证据链一致处理 ----
+	// 新建独立根密钥 r3、主体 s3 并授权，对象 o4 封装于 r3 子树数据密钥，
+	// 由 s3 唯一覆盖。移除 s3 后：
+	//   - s3 不再出现在 o4 的覆盖证明中；
+	//   - s3 到 o4 的最短证据链退化为缺口链（不再被判为可解密）；
+	//   - 仅由 s3 覆盖的 o4 被判为孤立；
+	//   - 移除主体令输入指纹变化，旧证明快照失效。
+	root3, err := app2.CreateKey(ctx, "独立根密钥3", model.KindRoot, "")
+	if err != nil {
+		return fmt.Errorf("场景5登记根密钥: %w", err)
+	}
+	if _, err := app2.Reg.ActivateKey(ctx, root3.ID); err != nil {
+		return fmt.Errorf("场景5启用根密钥: %w", err)
+	}
+	dataD, err := app2.CreateKey(ctx, "独立数据密钥3", model.KindData, root3.ID)
+	if err != nil {
+		return fmt.Errorf("场景5登记数据密钥: %w", err)
+	}
+	if _, err := app2.Reg.ActivateKey(ctx, dataD.ID); err != nil {
+		return fmt.Errorf("场景5启用数据密钥: %w", err)
+	}
+	s3, err := app2.CreateSubject(ctx, "临时工程师")
+	if err != nil {
+		return fmt.Errorf("场景5登记主体: %w", err)
+	}
+	if err := app2.AddGrant(ctx, s3.ID, root3.ID); err != nil {
+		return fmt.Errorf("场景5授权: %w", err)
+	}
+	o4, err := app2.CreateObject(ctx, "临时主体数据卷")
+	if err != nil {
+		return fmt.Errorf("场景5登记对象: %w", err)
+	}
+	if err := app2.Wrap(ctx, o4.ID, dataD.ID); err != nil {
+		return fmt.Errorf("场景5封装: %w", err)
+	}
+	// 移除前：s3 覆盖 o4，可解密，非孤立。
+	cov4, err := app2.ObjectCoverage(ctx, o4.ID)
+	if err != nil {
+		return err
+	}
+	if len(cov4) != 1 || cov4[0].SubjectID != s3.ID {
+		return fmt.Errorf("场景5失败: 移除前应仅 s3 覆盖 o4: %+v", cov4)
+	}
+	chain4, err := app2.Engine.ShortestPath(ctx, s3.ID, o4.ID)
+	if err != nil {
+		return err
+	}
+	if chain4 == nil || chain4.Kind != "coverage" {
+		return fmt.Errorf("场景5失败: 移除前 s3 应可解密 o4, 得到 %+v", chain4)
+	}
+	fpBefore, err := app2.Engine.Fingerprint(ctx)
+	if err != nil {
+		return err
+	}
+	// 移除主体。
+	if _, err := app2.RemoveSubject(ctx, s3.ID); err != nil {
+		return fmt.Errorf("场景5移除主体: %w", err)
+	}
+	cov4After, err := app2.ObjectCoverage(ctx, o4.ID)
+	if err != nil {
+		return err
+	}
+	for _, p := range cov4After {
+		if p.SubjectID == s3.ID {
+			return fmt.Errorf("场景5失败: 移除主体不应继续出现在覆盖证明中: %+v", cov4After)
+		}
+	}
+	orphaned4, err := app2.Engine.IsOrphaned(ctx, o4.ID)
+	if err != nil {
+		return err
+	}
+	if !orphaned4 {
+		return fmt.Errorf("场景5失败: 仅由移除主体覆盖的对象应判为孤立")
+	}
+	chain4After, err := app2.Engine.ShortestPath(ctx, s3.ID, o4.ID)
+	if err != nil {
+		return err
+	}
+	if chain4After == nil || chain4After.Kind != "gap" {
+		return fmt.Errorf("场景5失败: 移除主体应得到缺口链, 得到 %+v", chain4After)
+	}
+	fpAfter, err := app2.Engine.Fingerprint(ctx)
+	if err != nil {
+		return err
+	}
+	if fpBefore == fpAfter {
+		return fmt.Errorf("场景5失败: 移除主体应令输入指纹变化")
+	}
+	fmt.Printf("✓ 场景5 移除主体一致处理: s3 不再覆盖 o4，对象孤立，证据链退化为缺口链，指纹变化\n")
+
 	fmt.Println("smoke 自检全部通过")
 	return nil
 }

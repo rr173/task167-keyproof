@@ -46,6 +46,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/subjects/{id}", s.handleGetSubject)
 	s.mux.HandleFunc("POST /api/subjects/{id}/grants", s.handleAddGrant)
 	s.mux.HandleFunc("DELETE /api/subjects/{id}/grants/{keyId}", s.handleRevokeGrant)
+	s.mux.HandleFunc("DELETE /api/subjects/{id}", s.handleRemoveSubject)
 
 	// 对象与封装
 	s.mux.HandleFunc("POST /api/objects", s.handleCreateObject)

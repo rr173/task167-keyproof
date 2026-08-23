@@ -47,6 +47,18 @@ func (r *SubjectRepo) Get(ctx context.Context, q Querier, id string) (*model.Sub
 	return &s, nil
 }
 
+// UpdateStatus 更新主体生命周期状态。
+// 移除（removed）后主体不再具备授权与解密能力，但其历史授权边保留，
+// 以供审计与退休残留检测。
+func (r *SubjectRepo) UpdateStatus(ctx context.Context, q Querier, id string, status model.SubjectStatus) error {
+	res, err := q.ExecContext(ctx,
+		`UPDATE subjects SET status = ? WHERE id = ?`, string(status), id)
+	if err != nil {
+		return fmt.Errorf("update subject status: %w", err)
+	}
+	return requireAffected(res, model.ErrNotFound)
+}
+
 // List 列出全部主体。
 func (r *SubjectRepo) List(ctx context.Context, q Querier) ([]*model.Subject, error) {
 	rows, err := q.QueryContext(ctx, `SELECT id, name, status, created_at FROM subjects ORDER BY created_at, id`)

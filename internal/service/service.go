@@ -108,6 +108,13 @@ func (a *App) GetSubject(ctx context.Context, id string) (*model.Subject, error)
 	return a.subjects.Get(ctx, a.St.DB(), id)
 }
 
+// RemoveSubject 移除主体（软删除）。移除后主体不再具备授权与解密能力，
+// 但其历史授权边保留以供审计与退休残留检测；覆盖查询、最短证据链
+// 与孤立判定均不再计入该主体。
+func (a *App) RemoveSubject(ctx context.Context, id string) (*model.Subject, error) {
+	return a.Reg.RemoveSubject(ctx, id)
+}
+
 // AddGrant 授权主体到密钥。
 func (a *App) AddGrant(ctx context.Context, subjectID, keyID string) error {
 	return relation.GrantServiceOf(a.Reg).AddGrant(ctx, subjectID, keyID)
