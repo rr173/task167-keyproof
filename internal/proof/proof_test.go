@@ -125,3 +125,60 @@ func TestFingerprintStable(t *testing.T) {
 		t.Fatal("摘要应确定")
 	}
 }
+
+// TestFingerprintGrantOrderIndependent 验证：同一组授权主体与密钥关系，
+// 无论以何种顺序写入，都应得到相同的覆盖证明指纹。
+func TestFingerprintGrantOrderIndependent(t *testing.T) {
+	// 顺序一：s1->r1, s2->t1, s1->t1
+	st1, eng1, ctx1 := setupProof(t)
+	reg1 := relation.NewRegistry(st1)
+	buildGraph(t, ctx1, reg1, [][2]string{{"s1", "r1"}, {"s2", "t1"}, {"s1", "t1"}})
+	fp1, err := eng1.Fingerprint(ctx1)
+	if err != nil {
+		t.Fatalf("顺序一指纹: %v", err)
+	}
+
+	// 顺序二：同样的授权边以完全相反的顺序写入。
+	st2, eng2, ctx2 := setupProof(t)
+	reg2 := relation.NewRegistry(st2)
+	buildGraph(t, ctx2, reg2, [][2]string{{"s1", "t1"}, {"s2", "t1"}, {"s1", "r1"}})
+	fp2, err := eng2.Fingerprint(ctx2)
+	if err != nil {
+		t.Fatalf("顺序二指纹: %v", err)
+	}
+
+	if fp1 != fp2 {
+		t.Fatalf("同一组授权关系不同插入顺序应得到相同指纹: %s != %s", fp1, fp2)
+	}
+}
+
+// buildGraph 登记一组共享实体并按给定顺序建立授权边，供指纹顺序无关性测试使用。
+// 固定的实体集合：根密钥 r1、租户密钥 t1（父 r1）、主体 s1/s2；授权顺序由 grants 决定。
+func buildGraph(t *testing.T, ctx context.Context, reg *relation.Registry, grants [][2]string) {
+	t.Helper()
+	for _, k := range []*model.Key{
+		{ID: "r1", Name: "root", Kind: model.KindRoot, Status: model.KeyCandidate},
+		{ID: "t1", Name: "tenant", Kind: model.KindTenant, Status: model.KeyCandidate, ParentID: "r1"},
+	} {
+		if err := reg.CreateKey(ctx, k); err != nil {
+			t.Fatalf("create key %s: %v", k.ID, err)
+		}
+		if _, err := reg.ActivateKey(ctx, k.ID); err != nil {
+			t.Fatalf("activate key %s: %v", k.ID, err)
+		}
+	}
+	for _, s := range []*model.Subject{
+		{ID: "s1", Name: "eng", Status: model.SubjectActive},
+		{ID: "s2", Name: "tenantB", Status: model.SubjectActive},
+	} {
+		if err := reg.CreateSubject(ctx, s); err != nil {
+			t.Fatalf("create subject %s: %v", s.ID, err)
+		}
+	}
+	gs := relation.GrantServiceOf(reg)
+	for _, g := range grants {
+		if err := gs.AddGrant(ctx, g[0], g[1]); err != nil {
+			t.Fatalf("grant %s->%s: %v", g[0], g[1], err)
+		}
+	}
+}
