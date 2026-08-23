@@ -19,6 +19,9 @@ var (
 	ErrNoRootAuth = errors.New("root_key_without_authorization")
 	// ErrRetiredReference 尝试为已退休/已吊销密钥建立新引用。
 	ErrRetiredReference = errors.New("retired_key_reference")
+	// ErrMissingWrap 重新封装/移除封装时，对象未由指定源密钥封装
+	// （源封装边不存在）。验证据此阻断该步骤并保留现有封装关系。
+	ErrMissingWrap = errors.New("missing_wrap_edge")
 	// ErrNoCoverage 对象不存在任何可解密路径。
 	ErrNoCoverage = errors.New("no_coverage")
 	// ErrRetirementBlocked 退休动作会令对象失去覆盖。

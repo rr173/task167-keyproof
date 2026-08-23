@@ -94,7 +94,7 @@ func errorStatus(err error) int {
 		return http.StatusUnprocessableEntity
 	case errors.Is(err, model.ErrCycleDetected), errors.Is(err, model.ErrNoRootAuth),
 		errors.Is(err, model.ErrNoCoverage), errors.Is(err, model.ErrRetirementBlocked),
-		errors.Is(err, model.ErrEmptyPlan):
+		errors.Is(err, model.ErrMissingWrap), errors.Is(err, model.ErrEmptyPlan):
 		return http.StatusUnprocessableEntity
 	default:
 		return http.StatusInternalServerError

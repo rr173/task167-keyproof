@@ -114,11 +114,30 @@ func (v *Validator) checkKeyRotation(ctx context.Context, step *model.PlanStep, 
 	return nil
 }
 
-// checkRewrap 重新封装对象到目标密钥：目标密钥必须 active 且有授权主体。
+// checkRewrap 重新封装对象到目标密钥：对象必须确实仍由源密钥
+// (step.KeyID) 封装——若源封装边不存在，验证阻断该步骤并保留
+// 现有封装关系；目标密钥必须 active 且有授权主体。
 func (v *Validator) checkRewrap(ctx context.Context, step *model.PlanStep) error {
 	obj, err := v.Engine.ObjectOf(ctx, step.ObjectID)
 	if err != nil {
 		return err
+	}
+	// 确认对象确实仍由指定源密钥封装：源封装边必须存在，
+	// 否则阻断该步骤，避免基于不成立的前提迁移或破坏现有封装。
+	wrapKeys, err := v.Engine.WrapsOfObject(ctx, obj.ID)
+	if err != nil {
+		return err
+	}
+	sourcePresent := false
+	for _, wk := range wrapKeys {
+		if wk.ID == step.KeyID {
+			sourcePresent = true
+			break
+		}
+	}
+	if !sourcePresent {
+		return fmt.Errorf("%w: 对象 %s 未由源密钥 %s 封装，重新封装步骤被阻断",
+			model.ErrMissingWrap, obj.ID, step.KeyID)
 	}
 	target, err := v.Engine.KeyOf(ctx, step.TargetKeyID)
 	if err != nil {
@@ -127,7 +146,6 @@ func (v *Validator) checkRewrap(ctx context.Context, step *model.PlanStep) error
 	if target.Status != model.KeyActive {
 		return model.ErrInvalidState
 	}
-	_ = obj
 	return nil
 }
 

@@ -64,7 +64,7 @@ func (s *Service) AddStep(ctx context.Context, planID string, step *model.PlanSt
 			return nil, model.ErrInvalidInput
 		}
 	case model.ActionRewrapObject:
-		if step.ObjectID == "" || step.TargetKeyID == "" {
+		if step.ObjectID == "" || step.KeyID == "" || step.TargetKeyID == "" {
 			return nil, model.ErrInvalidInput
 		}
 	case model.ActionGrantKey, model.ActionRevokeGrant:
