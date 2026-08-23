@@ -48,13 +48,15 @@ func (h *hierarchy) AncestorIDs(ctx context.Context, q store.Querier, keyID stri
 }
 
 // WouldCreateCycle 判断把 keyID 的父节点改为 newParent 是否成环。
-// 若 newParent 处于 keyID 的子孙子树内（即 newParent 向上可达 keyID），
-// 则会产生环。
+// 成环条件：newParent 处于 keyID 的子树内，即从 newParent 沿父链向上
+// 可达 keyID（无论中间隔着多少层，即任何间接成环）。
+// 这同时覆盖了“把祖先挂到其后代下面”：若 keyID 已是 newParent 的祖先，
+// 再让 keyID 认 newParent 为父，便会形成 keyID -> newParent -> ... -> keyID 的环。
 func (h *hierarchy) WouldCreateCycle(ctx context.Context, q store.Querier, keyID, newParent string) (bool, error) {
 	if newParent == "" {
 		return false, nil
 	}
-	// 从 newParent 沿父链向上，若途经 keyID 则成环。
+	// 从 newParent 沿父链向上，若途经 keyID 则成环（含间接成环）。
 	cur := newParent
 	seen := map[string]bool{}
 	for cur != "" {
@@ -128,7 +130,11 @@ func (r *Registry) MoveKey(ctx context.Context, keyID, newParent string) error {
 	if err != nil {
 		return err
 	}
-	_ = cycle
+	if cycle {
+		// 拒绝任何成环（含间接成环）：即便 keyID 与 newParent 之间
+		// 已存在一条父链，也不得把祖先挂到其后代下面。
+		return model.ErrCycleDetected
+	}
 	return r.keys.UpdateParent(ctx, r.st.DB(), keyID, newParent)
 }
 

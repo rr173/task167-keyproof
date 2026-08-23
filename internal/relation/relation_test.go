@@ -70,6 +70,32 @@ func TestHierarchyCycleRejected(t *testing.T) {
 	}
 }
 
+func TestMoveKeyRejectsIndirectCycle(t *testing.T) {
+	_, reg, ctx := setup(t)
+	// 构造层级 r1 -> t1 -> t2（多层租户链）。
+	root := &model.Key{ID: "r1", Name: "root", Kind: model.KindRoot, Status: model.KeyCandidate}
+	_ = reg.CreateKey(ctx, root)
+	t1 := &model.Key{ID: "t1", Name: "t1", Kind: model.KindTenant, Status: model.KeyCandidate, ParentID: "r1"}
+	_ = reg.CreateKey(ctx, t1)
+	t2 := &model.Key{ID: "t2", Name: "t2", Kind: model.KindTenant, Status: model.KeyCandidate, ParentID: "t1"}
+	_ = reg.CreateKey(ctx, t2)
+
+	// 把祖先 t1 挂到其后代 t2 下面：t1 的父改为 t2，
+	// 会形成 t1 -> t2 -> t1 的间接环，必须拒绝。
+	if err := reg.MoveKey(ctx, "t1", "t2"); err != model.ErrCycleDetected {
+		t.Fatalf("间接成环应拒绝(ErrCycleDetected), got %v", err)
+	}
+	// r1 是 t2 的祖先，把 r1 挂到 t2 下也应拒绝；但根密钥换父先被 ErrInvalidState 拦截，
+	// 这里改用把 t1 挂到自身验证自环：自环同样应拒绝。
+	if err := reg.MoveKey(ctx, "t1", "t1"); err != model.ErrCycleDetected {
+		t.Fatalf("自环应拒绝(ErrCycleDetected), got %v", err)
+	}
+	// 合法的远端移动（跨子树，但不成环）：t2 换到 r1 下，应成功。
+	if err := reg.MoveKey(ctx, "t2", "r1"); err != nil {
+		t.Fatalf("合法换父不应失败, got %v", err)
+	}
+}
+
 func TestGrantAndWrapConstraints(t *testing.T) {
 	_, reg, ctx := setup(t)
 	root := &model.Key{ID: "r1", Name: "root", Kind: model.KindRoot, Status: model.KeyCandidate}
