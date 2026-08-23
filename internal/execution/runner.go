@@ -123,7 +123,10 @@ func (r *Runner) ExecuteStep(ctx context.Context, planID string, seq int) (*Step
 		return nil
 	})
 	if applyErr != nil {
-		// 失败：写入失败执行记录并释放锁。
+		// 失败：先释放本次获取的目标锁。锁在事务外申请，事务回滚不会回收，
+		// 若不显式释放会遗留在失败路径，导致修复外部状态后重试同一步骤时
+		// 被误判为跨计划占用（ErrCrossPlan）；再写入失败执行记录。
+		_ = r.releaseStepLocks(ctx, p.ID, step)
 		exec.Status = model.ExecFailed
 		exec.Reason = applyErr.Error()
 		now := time.Now().UTC()
