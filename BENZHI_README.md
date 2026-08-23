@@ -19,10 +19,10 @@ go run ./cmd/keyproof --smoke-test
 ## Docker 双架构验证
 
 ```bash
-bash build_benzhi_docker.sh keyproof-amd64 linux/amd64
-docker run --rm keyproof-amd64 /app/keyproof --smoke-test
-bash build_benzhi_docker.sh keyproof-arm64 linux/arm64
-docker run --rm keyproof-arm64 /app/keyproof --smoke-test
+bash build_benzhi_docker.sh my-project linux/amd64
+docker run --rm --platform linux/amd64 my-project --smoke-test
+bash build_benzhi_docker.sh my-project linux/arm64
+docker run --rm --platform linux/arm64 my-project --smoke-test
 ```
 
 镜像内入口 `/app/keyproof`，默认 `CMD ["--smoke-test"]`。
