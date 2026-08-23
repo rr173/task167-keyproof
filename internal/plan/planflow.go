@@ -107,15 +107,24 @@ func (s *Service) Validate(ctx context.Context, planID string, checker StepCheck
 		return nil, model.ErrEmptyPlan
 	}
 
+	// 进入 validating 前，把此前因覆盖不足而 blocked 的步骤复位为
+	// 待验证：外部关系修复后必须重新校验这些步骤，使其在通过时
+	// 恢复为可执行、已验证状态，并允许随后执行原步骤。
+	for _, step := range steps {
+		if step.Status == model.StepBlocked {
+			if err := s.plans.UpdateStepStatus(ctx, s.st.DB(), step.ID, model.StepPending, nil); err != nil {
+				return nil, err
+			}
+			step.Status = model.StepPending
+		}
+	}
+
 	if err := s.plans.UpdatePlanStatus(ctx, s.st.DB(), planID, model.PlanValidating); err != nil {
 		return nil, err
 	}
 	report := &ValidationReport{PlanID: planID}
 	blocked := false
 	for _, step := range steps {
-		if step.Status == model.StepBlocked {
-			continue
-		}
 		result := checker.Check(ctx, step, steps)
 		if result.Err != nil {
 			blocked = true

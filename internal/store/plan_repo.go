@@ -129,12 +129,22 @@ func scanSteps(rows *sql.Rows) ([]*model.PlanStep, error) {
 }
 
 // UpdateStepStatus 更新步骤状态与阻断时间。
+//
+// blocked_at 仅在步骤进入 blocked 态时有意义；离开 blocked 态
+// （verified/applied/rolled_back）时必须清空，否则一个已验证的
+// 步骤仍残留阻断时间戳，与“已验证”语义冲突，并阻碍修复后
+// 的重新验证把步骤恢复为可执行、已验证状态。
+// blockedAt 非空时以其为准；为 nil 且目标为 blocked 时记当前时间；
+// 为 nil 且目标为其它状态时清空。
 func (r *PlanRepo) UpdateStepStatus(ctx context.Context, q Querier, stepID string, status model.StepStatus, blockedAt *time.Time) error {
 	var blocked any
-	if blockedAt != nil {
+	switch {
+	case blockedAt != nil:
 		blocked = blockedAt.UTC().Format(time.RFC3339)
-	} else if status == model.StepVerified {
-		blocked = time.Now().UTC().Format(time.RFC3339)
+	case status == model.StepBlocked:
+		blocked = Now()
+	default:
+		blocked = nil
 	}
 	res, err := q.ExecContext(ctx,
 		`UPDATE plan_steps SET status = ?, blocked_at = ? WHERE id = ?`,
