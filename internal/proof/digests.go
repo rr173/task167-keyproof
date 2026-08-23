@@ -39,6 +39,9 @@ func (e *Engine) Fingerprint(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// 指纹必须与落库/插入顺序无关：同一组输入边即使经历不同的
+	// 落库顺序也必须得到相同指纹。因此对四类输入边统一按稳定的
+	// 业务键排序后再序列化，避免依赖 created_at 等顺序敏感字段。
 	sort.SliceStable(keys, func(i, j int) bool { return keys[i].ID < keys[j].ID })
 	sort.SliceStable(grants, func(i, j int) bool {
 		if grants[i].SubjectID != grants[j].SubjectID {
@@ -46,6 +49,13 @@ func (e *Engine) Fingerprint(ctx context.Context) (string, error) {
 		}
 		return grants[i].KeyID < grants[j].KeyID
 	})
+	sort.SliceStable(wraps, func(i, j int) bool {
+		if wraps[i].ObjectID != wraps[j].ObjectID {
+			return wraps[i].ObjectID < wraps[j].ObjectID
+		}
+		return wraps[i].KeyID < wraps[j].KeyID
+	})
+	sort.SliceStable(objects, func(i, j int) bool { return objects[i].ID < objects[j].ID })
 	snap := InputSnapshot{Keys: keys, Grants: grants, Wraps: wraps, Objects: objects}
 	raw, err := json.Marshal(snap)
 	if err != nil {
