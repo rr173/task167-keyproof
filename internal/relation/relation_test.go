@@ -117,3 +117,57 @@ func TestWrapRejectsRetiredKey(t *testing.T) {
 		t.Fatalf("已退休密钥应拒绝新封装, got %v", err)
 	}
 }
+
+// TestRewrapMarksObjectRewrapped 验证对象重新封装成功后状态进入 rewrapped，
+// 后续查询可据此识别该对象已完成重新封装。
+func TestRewrapMarksObjectRewrapped(t *testing.T) {
+	st, reg, ctx := setup(t)
+	root := &model.Key{ID: "r1", Name: "root", Kind: model.KindRoot, Status: model.KeyCandidate}
+	if err := reg.CreateKey(ctx, root); err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	_, _ = reg.ActivateKey(ctx, "r1")
+	data := &model.Key{ID: "d1", Name: "data", Kind: model.KindData, Status: model.KeyCandidate, ParentID: "r1"}
+	if err := reg.CreateKey(ctx, data); err != nil {
+		t.Fatalf("create data: %v", err)
+	}
+	_, _ = reg.ActivateKey(ctx, "d1")
+	data2 := &model.Key{ID: "d2", Name: "data2", Kind: model.KindData, Status: model.KeyCandidate, ParentID: "r1"}
+	if err := reg.CreateKey(ctx, data2); err != nil {
+		t.Fatalf("create data2: %v", err)
+	}
+	_, _ = reg.ActivateKey(ctx, "d2")
+
+	obj := &model.Object{ID: "o1", Name: "obj", Status: model.ObjectProtected}
+	if err := reg.CreateObject(ctx, obj); err != nil {
+		t.Fatalf("create object: %v", err)
+	}
+	ws := WrapServiceOf(reg)
+	if err := ws.AddWrap(ctx, "o1", "d1"); err != nil {
+		t.Fatalf("wrap: %v", err)
+	}
+
+	// 重新封装成功后，对象状态必须进入 rewrapped。
+	if err := ws.Rewrap(ctx, "o1", "d1", "d2"); err != nil {
+		t.Fatalf("rewrap: %v", err)
+	}
+	objects := store.NewObjectRepo()
+	got, err := objects.Get(ctx, st.DB(), "o1")
+	if err != nil {
+		t.Fatalf("get object: %v", err)
+	}
+	if got.Status != model.ObjectRewrapped {
+		t.Fatalf("重封装后对象状态应为 rewrapped, 实际 %s", got.Status)
+	}
+	// 反向重封装（回滚方向）同样落于 rewrapped。
+	if err := ws.Rewrap(ctx, "o1", "d2", "d1"); err != nil {
+		t.Fatalf("rewrap back: %v", err)
+	}
+	got, err = objects.Get(ctx, st.DB(), "o1")
+	if err != nil {
+		t.Fatalf("get object: %v", err)
+	}
+	if got.Status != model.ObjectRewrapped {
+		t.Fatalf("反向重封装后对象状态应为 rewrapped, 实际 %s", got.Status)
+	}
+}

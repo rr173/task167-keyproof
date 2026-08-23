@@ -101,6 +101,7 @@ func (a *App) RecoverPlan(ctx context.Context, planID string) (*recoveryReport, 
 		FingerprintOK:  rep.FingerprintOK,
 		VerifiedCount:  rep.VerifiedCount,
 		BlockedCount:   rep.BlockedCount,
+		RewrappedCount: rep.RewrappedCount,
 		Messages:       rep.Messages,
 	}, nil
 }
@@ -134,5 +135,6 @@ type recoveryReport struct {
 	FingerprintOK   bool     `json:"fingerprintOk"`
 	VerifiedCount   int      `json:"verifiedCount"`
 	BlockedCount    int      `json:"blockedCount"`
+	RewrappedCount  int      `json:"rewrappedCount"`
 	Messages        []string `json:"messages"`
 }

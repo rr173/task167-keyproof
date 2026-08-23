@@ -60,6 +60,22 @@ func (e *Engine) ListObjects(ctx context.Context) ([]*model.Object, error) {
 	return e.objects.List(ctx, e.st.DB())
 }
 
+// RewrappedObjects 返回已完成重新封装（状态为 rewrapped）的对象集合。
+// 证明与恢复流程据此识别哪些对象已成功完成迁移。
+func (e *Engine) RewrappedObjects(ctx context.Context) ([]*model.Object, error) {
+	all, err := e.objects.List(ctx, e.st.DB())
+	if err != nil {
+		return nil, err
+	}
+	var out []*model.Object
+	for _, o := range all {
+		if o.Status.Rewrapped() {
+			out = append(out, o)
+		}
+	}
+	return out, nil
+}
+
 // ListKeys 列出全部密钥。
 func (e *Engine) ListKeys(ctx context.Context) ([]*model.Key, error) {
 	return e.keys.List(ctx, e.st.DB())

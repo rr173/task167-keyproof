@@ -125,3 +125,40 @@ func TestFingerprintStable(t *testing.T) {
 		t.Fatal("摘要应确定")
 	}
 }
+
+// TestRewrappedObjectsRecognized 验证对象重新封装成功后状态进入 rewrapped，
+// 证明引擎可据此识别已完成重新封装的对象。
+func TestRewrappedObjectsRecognized(t *testing.T) {
+	st, eng, ctx := setupProof(t)
+	reg := relation.NewRegistry(st)
+	root := &model.Key{ID: "r1", Name: "root", Kind: model.KindRoot, Status: model.KeyCandidate}
+	_ = reg.CreateKey(ctx, root)
+	_, _ = reg.ActivateKey(ctx, "r1")
+	data := &model.Key{ID: "d1", Name: "data", Kind: model.KindData, Status: model.KeyCandidate, ParentID: "r1"}
+	_ = reg.CreateKey(ctx, data)
+	_, _ = reg.ActivateKey(ctx, "d1")
+	data2 := &model.Key{ID: "d2", Name: "data2", Kind: model.KindData, Status: model.KeyCandidate, ParentID: "r1"}
+	_ = reg.CreateKey(ctx, data2)
+	_, _ = reg.ActivateKey(ctx, "d2")
+
+	obj := &model.Object{ID: "o1", Name: "obj", Status: model.ObjectProtected}
+	_ = reg.CreateObject(ctx, obj)
+	ws := relation.WrapServiceOf(reg)
+	_ = ws.AddWrap(ctx, "o1", "d1")
+
+	// 重封装前：无已完成重封装对象。
+	if got, _ := eng.RewrappedObjects(ctx); len(got) != 0 {
+		t.Fatalf("重封装前不应有 rewrapped 对象, 得到 %d", len(got))
+	}
+	// 重封装成功后：对象进入 rewrapped，证明引擎据此识别。
+	if err := ws.Rewrap(ctx, "o1", "d1", "d2"); err != nil {
+		t.Fatalf("rewrap: %v", err)
+	}
+	got, err := eng.RewrappedObjects(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "o1" {
+		t.Fatalf("应识别 1 个已完成重封装对象 o1, 得到 %+v", got)
+	}
+}

@@ -33,14 +33,15 @@ type Grant struct {
 
 // ObjectStatus 加密对象生命周期状态机：
 //
-//	protected -> migrating -> rewrapped
+//	protected -> migrating -> rewrapped（迁移成功完成）
 //	protected -> orphaned（唯一可解密密钥被吊销/退休且无替代）
+//	* -> rewrapped（任一重封装成功后落于该终态，证明与恢复据此识别完成）
 type ObjectStatus string
 
 const (
 	ObjectProtected ObjectStatus = "protected" // 受保护：存在可解密路径
-	ObjectMigrating ObjectStatus = "migrating" // 迁移中：正在重新封装
-	ObjectRewrapped ObjectStatus = "rewrapped" // 已重新封装：迁移完成
+	ObjectMigrating ObjectStatus = "migrating" // 迁移中：正在重新封装（多阶段未完成）
+	ObjectRewrapped ObjectStatus = "rewrapped" // 已重新封装：迁移完成，证明与恢复可据此识别
 	ObjectOrphaned  ObjectStatus = "orphaned"  // 孤立：无可解密路径
 )
 
@@ -53,6 +54,9 @@ func (s ObjectStatus) Valid() bool {
 		return false
 	}
 }
+
+// Rewrapped 表示对象已完成重新封装（正/反向重封装均落于该终态）。
+func (s ObjectStatus) Rewrapped() bool { return s == ObjectRewrapped }
 
 // Object 表示一个被密钥加密的受保护对象。
 type Object struct {

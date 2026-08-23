@@ -64,6 +64,10 @@ func (w *WrapService) Rewrap(ctx context.Context, objectID, oldKeyID, newKeyID s
 }
 
 // RewrapTx 在给定事务内执行重新封装。
+// 成功后对象状态进入 rewrapped：表示已完成重新封装，
+// 证明与重启恢复流程可据此识别该对象已完成迁移。
+// （对象状态机为 protected -> migrating -> rewrapped；本实现中
+// 重封装为单事务原子完成，故直接落于终态 rewrapped。）
 func (w *WrapService) RewrapTx(ctx context.Context, q store.Querier, objectID, oldKeyID, newKeyID string) error {
 	if _, err := w.objects.Get(ctx, q, objectID); err != nil {
 		return err
@@ -89,6 +93,10 @@ func (w *WrapService) RewrapTx(ctx context.Context, q store.Querier, objectID, o
 		return err
 	}
 	if err := w.objects.RemoveWrap(ctx, q, objectID, oldKeyID); err != nil {
+		return err
+	}
+	// 封装边切换成功：对象标记为已完成重新封装。
+	if err := w.objects.UpdateStatus(ctx, q, objectID, model.ObjectRewrapped); err != nil {
 		return err
 	}
 	return nil

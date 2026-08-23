@@ -19,6 +19,7 @@ type RecoveryReport struct {
 	FingerprintOK   bool             `json:"fingerprintOk"`   // 当前指纹与最新证明一致
 	VerifiedCount   int              `json:"verifiedCount"`   // 本次恢复重新验证通过的步骤数
 	BlockedCount    int              `json:"blockedCount"`    // 本次恢复被阻断的步骤数
+	RewrappedCount  int              `json:"rewrappedCount"`  // 已完成重新封装的对象数
 	Messages        []string         `json:"messages"`
 }
 
@@ -69,7 +70,30 @@ func (r *Runner) Recover(ctx context.Context, planID string, validator *plan.Val
 	}
 	report.ProofPreserved = preserved
 
-	// 2. 对未应用且未回滚的步骤重新验证。
+	// 2. 识别已完成重新封装的对象：每个已应用的 rewrap 步骤，
+	//    其目标对象状态必须为 rewrapped——据此确认重封装已成功落地。
+	rewrappedSeen := map[string]bool{}
+	for _, s := range steps {
+		if s.Status != model.StepApplied || s.Action != model.ActionRewrapObject {
+			continue
+		}
+		obj, err := engine.ObjectOf(ctx, s.ObjectID)
+		if err != nil {
+			return nil, err
+		}
+		if obj.Status.Rewrapped() {
+			rewrappedSeen[obj.ID] = true
+			continue
+		}
+		preserved = false
+		report.Messages = append(report.Messages,
+			fmt.Sprintf("步骤 %d 的对象 %s 未进入 rewrapped（实际 %s），重封装未完成",
+				s.Seq, obj.ID, obj.Status))
+	}
+	report.RewrappedCount = len(rewrappedSeen)
+	report.ProofPreserved = preserved
+
+	// 3. 对未应用且未回滚的步骤重新验证。
 	for _, s := range steps {
 		if s.Status == model.StepApplied || s.Status == model.StepRolledBack {
 			continue
@@ -89,7 +113,7 @@ func (r *Runner) Recover(ctx context.Context, planID string, validator *plan.Val
 		}
 	}
 
-	// 3. 汇总：若全部步骤已应用则计划已完成；否则按阻断情况置状态。
+	// 4. 汇总：若全部步骤已应用则计划已完成；否则按阻断情况置状态。
 	switch {
 	case applied == len(steps):
 		report.PlanStatus = model.PlanCompleted
